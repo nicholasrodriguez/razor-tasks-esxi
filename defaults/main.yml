@@ -1,0 +1,4 @@
+---
+# defaults file for razor-tasks
+# ESXi boot.cfg kernel parameters, only set this to true in non-production environments
+allowLegacyCPU: false

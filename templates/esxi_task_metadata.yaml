@@ -1,0 +1,9 @@
+---
+os_version: {{ item.major }}
+label: VMware ESXi {{ item.major }}
+description: VMware ESXi {{ item.major }}
+boot_sequence:
+  1: boot_install
+  2: boot_local
+  default: boot_local
+base: vmware_esxi

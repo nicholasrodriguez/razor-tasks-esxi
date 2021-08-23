@@ -1,0 +1,103 @@
+# ESXi kickstart script used in conjunction with Razor
+accepteula
+rootpw --iscrypted <%=
+  root_password = node.metadata['root_password'] || node.root_password
+  if root_password =~ /^\$\d+\$[^$]*\$/
+    root_password
+  else
+    require 'unix_crypt'
+    # @todo danielp 2013-11-07: if ESXi supports a stronger algorithm, we
+    # should probably upgrade to using it in preference to MD5.  SHA512 is
+    # current state-of-the-art practice, elsewhere.
+    UnixCrypt::MD5.build(node.root_password)
+  end
+%>
+clearpart --firstdisk --overwritevmfs
+install --firstdisk --overwritevmfs
+%include /tmp/networkconfig
+reboot
+
+%pre --interpreter=busybox
+wget <%= stage_done_url("kickstart") %>
+
+echo 'network --bootproto=static --addvmportgroup=false --device=<%= node.metadata['mgmt_nic'] %> --ip=<%= node.metadata['ipaddress'] %> --netmask=<%= node.metadata['netmask'] %> --hostname=<%= node.hostname %> --nameserver=<%= node.metadata['dns1'] %>,<%= node.metadata['dns2'] %> --gateway=<%= node.metadata['gateway'] %>' > /tmp/networkconfig
+
+%firstboot --interpreter=busybox
+# Set the hostname correctly before we do anythig else
+esxcli system hostname set --fqdn <%= node.metadata['hostname'] || node.hostname %>
+
+# Enable HV (Hardware Virtualization to run nested 64bit Guests + Hyper-V VM)
+grep -i 'vhv.allow' /etc/vmware/config || echo 'vhv.allow = 'TRUE'' >> /etc/vmware/config
+
+# Eenable SSH support
+vim-cmd hostsvc/enable_ssh
+vim-cmd hostsvc/start_ssh
+
+# Enable & start ESXi Shell (TSM)
+vim-cmd hostsvc/enable_esx_shell
+vim-cmd hostsvc/start_esx_shell
+
+esxcli system settings advanced set -o /UserVars/SuppressShellWarning -i 1
+
+# Disable ipv6
+esxcli system module parameters set -m tcpip4 -p ipv6=0
+
+# Rename local datastore to something more meaningful
+vim-cmd hostsvc/datastore/rename datastore1 "$(hostname -s)-local-storage-1"
+
+# Assign license
+# vim-cmd vimsvc/license --set <%= @esx_license %>
+
+# Change DCUI keyboard layout to UK
+esxcli system settings keyboard layout set -l "United Kingdom"
+
+# Change the individual syslog rotation count
+esxcli system syslog config logger set --id=hostd --rotate=20 --size=2048
+esxcli system syslog config logger set --id=vmkernel --rotate=20 --size=2048
+esxcli system syslog config logger set --id=fdm --rotate=20
+esxcli system syslog config logger set --id=vpxa --rotate=20
+
+### NTP configuration ###
+cat > /etc/ntp.conf << __NTP_CONFIG__
+restrict default nomodify notrap nopeer noquery
+restrict 127.0.0.1
+server <%= node.metadata['time1'] %>
+server <%= node.metadata['time2'] %>
+driftfile /etc/ntp.drift
+__NTP_CONFIG__
+/sbin/chkconfig --level 345 ntpd on
+
+### Set system swap ###
+esxcli sched swap system set -d true -n "$(hostname -s)-local-storage-1"
+
+### Firewall configuration ###
+# Enable firewall
+esxcli network firewall set --default-action false --enabled yes
+
+# Services to enable by default
+FIREWALL_SERVICES='syslog sshClient ntpClient updateManager httpClient netdump'
+for SERVICE in ${FIREWALL_SERVICES}; do
+    esxcli network firewall ruleset set --ruleset-id ${SERVICE} --enabled yes
+done
+
+# Backup ESXi configuration to persist changes
+/sbin/auto-backup.sh
+
+# Change vmkernel and vSwitch to mtu 9000
+esxcli network vswitch standard set -m 9000 -v vSwitch0
+esxcli network ip interface set -m 9000 -i vmk0
+
+# Enter maintenance mode
+vim-cmd hostsvc/maintenance_mode_enter
+
+# Copy %first boot script logs to persisted datastore
+cp /var/log/hostd.log "/vmfs/volumes/$(hostname -s)-local-storage-1/firstboot-hostd.log"
+cp /var/log/esxi_install.log "/vmfs/volumes/$(hostname -s)-local-storage-1/firstboot-esxi_install.log"
+
+# Mark as installed with Razor. The firewall needs to be switched off temporarily
+esxcli network firewall set --enabled false
+wget <%= stage_done_url("finished") %>
+esxcli network firewall set --enabled true
+
+reboot
+

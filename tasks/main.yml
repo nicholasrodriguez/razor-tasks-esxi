@@ -1,0 +1,81 @@
+---
+# Create the Tasks directories
+#
+
+- name: ESXi Task directories
+  file:
+    path: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task"
+    state: directory
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+# Create ESXi Tasks
+
+- name: Create an ESXi Task kickstart
+  copy:
+    src: "files/kickstart_esxi_{{ item.major }}.j2"
+    dest: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task/ks.cfg.erb"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+- name: Update ESXi BIOS Boot_Install Config
+  copy:
+    src: files/boot_install.erb.j2
+    dest: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task/boot_install.erb"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+- name: Update ESXi UEFI Boot_Config
+  template:
+    src: templates/boot.cfg.erb.j2
+    dest: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task/boot.cfg.erb"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+- name: Add ESXi Task metadata
+  template:
+    src: templates/esxi_task_metadata.yaml
+    dest: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task/metadata.yaml"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+- name: Copy default ESXi pxelinux.0 to ESXi Tasks
+  copy:
+    remote_src: yes
+    src: /opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi.task/pxelinux.0
+    dest: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task/pxelinux.0"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+- name: Copy default ESXi pxelinux_esxi.cfg.erb to ESXi Tasks
+  copy:
+    remote_src: yes
+    src: /opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi.task/pxelinux_esxi.cfg.erb
+    dest: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task/pxelinux_esxi.cfg.erb"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+- name: Copy default ESXi README.md to ESXi Tasks
+  copy:
+    remote_src: yes
+    src: /opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi.task/README.md
+    dest: "/opt/puppetlabs/server/apps/razor-server/share/razor-server/tasks/vmware_esxi/{{ item.major }}.task/README.md"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - tasks
+
+# Setup the Razor ESXi Repos
+#
+
+- name: Create ESXi Repos
+  shell: "/usr/local/bin/razor create-repo --name {{ item.build }} --iso-url {{ item.url }} --task vmware_esxi/{{ item.major }}"
+  loop: "{{ esxi_versions }}"
+  tags:
+    - esxi_repos
