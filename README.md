@@ -14,7 +14,7 @@ This role will only create custom ESXi Tasks and Repos in Razor. As kickstart fi
 
 I've created the following personal Ansible Role for creating Razor Policies and Tags which inject the metadata variables into the kickstarts e.g. ```<%= node.metadata['mgmt_nic'] %>```:
 
-* nicholasrodriguez.razor_policies (IN DEV)
+* nicholasrodriguez.razor_manage_hosts (IN DEV)
 
 These can be copied and used as template for your own environments.
 
